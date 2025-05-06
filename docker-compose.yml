@@ -1,0 +1,93 @@
+name: postgres
+
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-database}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-database}'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - postgres-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-pgadmin4@pgadmin.org}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-80}:80"
+    networks:
+      - postgres-network
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: ${PGEXPORTER_DATA_SOURCE_URI:-host.docker.internal:5432/postgres?sslmode=disable}
+      DATA_SOURCE_USER: ${PGEXPORTER_DATA_SOURCE_USER:-postgres}
+      DATA_SOURCE_PASS: ${PGEXPORTER_DATA_SOURCE_PASS:-password}
+    ports:
+      - "${PGEXPORTER_PORT:-9187}:9187"
+    networks:
+      - postgres-network
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ${PROMETHEUS_CONFIG:-/home/monitoring/prometheus/prometheus.yml}:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--log.level=debug'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - postgres-network
+
+  grafana:
+    build: "${GRAFANA_SOURCE:-/home/monitoring/grafana}"
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - "${GRAFANA_SOURCE:-/home/monitoring/grafana}:/var/lib/grafana"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_SECURITY_ADMIN_PASSWORD:-admin}
+    networks:
+      - postgres-network
+    user: "${GRAFANA_OS_USER_ID:-0}"
+
+networks:
+  postgres-network:
+    driver: bridge
+
+
+volumes:
+  postgres-data:
+    driver: local
+  pgadmin:
+    driver: local
